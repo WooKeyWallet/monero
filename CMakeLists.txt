@@ -952,6 +952,7 @@ find_library(PGM_LIBRARY pgm)
 find_library(NORM_LIBRARY norm)
 find_library(PROTOLIB_LIBRARY protolib)
 find_library(SODIUM_LIBRARY sodium)
+include_directories(${SODIUM_INCLUDE_DIR} ${IOKIT_INCLUDE_DIR} ${ZMQ_INCLUDE_PATH})
 
 if(NOT ZMQ_INCLUDE_PATH)
   message(FATAL_ERROR "Could not find required header zmq.h")
