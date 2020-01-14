@@ -40,7 +40,7 @@ include(CheckFunctionExists)
 include(FindPythonInterp)
 
 if (IOS)
-    INCLUDE(CmakeLists_IOS.txt)
+    INCLUDE(CMakeLists_IOS.txt)
 endif()
 
 cmake_minimum_required(VERSION 2.8.7)
