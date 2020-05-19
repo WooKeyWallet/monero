@@ -170,15 +170,5 @@ class MiningTest():
             assert res.hash == block_hash
 
 
-class Guard:
-    def __enter__(self):
-        pass
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        daemon = Daemon()
-        try: daemon.stop_mining()
-        except: pass
-
 if __name__ == '__main__':
-    with Guard() as guard:
-        MiningTest().run_test()
+    MiningTest().run_test()

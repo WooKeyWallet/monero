@@ -1038,15 +1038,10 @@ uint64_t gamma_picker::pick()
   return first_rct + crypto::rand_idx(n_rct);
 };
 
-boost::mutex wallet_keys_unlocker::lockers_lock;
-unsigned int wallet_keys_unlocker::lockers = 0;
 wallet_keys_unlocker::wallet_keys_unlocker(wallet2 &w, const boost::optional<tools::password_container> &password):
   w(w),
   locked(password != boost::none)
 {
-  boost::lock_guard<boost::mutex> lock(lockers_lock);
-  if (lockers++ > 0)
-    locked = false;
   if (!locked || w.is_unattended() || w.ask_password() != tools::wallet2::AskPasswordToDecrypt || w.watch_only())
   {
     locked = false;
@@ -1061,9 +1056,6 @@ wallet_keys_unlocker::wallet_keys_unlocker(wallet2 &w, bool locked, const epee::
   w(w),
   locked(locked)
 {
-  boost::lock_guard<boost::mutex> lock(lockers_lock);
-  if (lockers++ > 0)
-    locked = false;
   if (!locked)
     return;
   w.generate_chacha_key_from_password(password, key);
@@ -1072,19 +1064,9 @@ wallet_keys_unlocker::wallet_keys_unlocker(wallet2 &w, bool locked, const epee::
 
 wallet_keys_unlocker::~wallet_keys_unlocker()
 {
-  try
-  {
-    boost::lock_guard<boost::mutex> lock(lockers_lock);
-    if (lockers == 0)
-    {
-      MERROR("There are no lockers in wallet_keys_unlocker dtor");
-      return;
-    }
-    --lockers;
-    if (!locked)
-      return;
-    w.encrypt_keys(key);
-  }
+  if (!locked)
+    return;
+  try { w.encrypt_keys(key); }
   catch (...)
   {
     MERROR("Failed to re-encrypt wallet keys");
@@ -2847,7 +2829,7 @@ void wallet2::remove_obsolete_pool_txs(const std::vector<crypto::hash> &tx_hashe
 }
 
 //----------------------------------------------------------------------------------------------------
-void wallet2::update_pool_state(std::vector<std::pair<cryptonote::transaction, bool>> &process_txs, bool refreshed)
+void wallet2::update_pool_state(std::vector<std::tuple<cryptonote::transaction, crypto::hash, bool>> &process_txs, bool refreshed)
 {
   MTRACE("update_pool_state start");
 
@@ -3037,7 +3019,7 @@ void wallet2::update_pool_state(std::vector<std::pair<cryptonote::transaction, b
                     [tx_hash](const std::pair<crypto::hash, bool> &e) { return e.first == tx_hash; });
                 if (i != txids.end())
                 {
-                  process_txs.push_back(std::make_pair(tx, tx_entry.double_spend_seen));
+                  process_txs.push_back(std::make_tuple(tx, tx_hash, tx_entry.double_spend_seen));
                 }
                 else
                 {
@@ -3068,14 +3050,14 @@ void wallet2::update_pool_state(std::vector<std::pair<cryptonote::transaction, b
   MTRACE("update_pool_state end");
 }
 //----------------------------------------------------------------------------------------------------
-void wallet2::process_pool_state(const std::vector<std::pair<cryptonote::transaction, bool>> &txs)
+void wallet2::process_pool_state(const std::vector<std::tuple<cryptonote::transaction, crypto::hash, bool>> &txs)
 {
   const time_t now = time(NULL);
   for (const auto &e: txs)
   {
-    const cryptonote::transaction &tx = e.first;
-    const bool double_spend_seen = e.second;
-    const crypto::hash tx_hash = get_transaction_hash(tx);
+    const cryptonote::transaction &tx = std::get<0>(e);
+    const crypto::hash &tx_hash = std::get<1>(e);
+    const bool double_spend_seen = std::get<2>(e);
     process_new_transaction(tx_hash, tx, std::vector<uint64_t>(), 0, 0, now, false, true, double_spend_seen, {});
     m_scanned_pool_txs[0].insert(tx_hash);
     if (m_scanned_pool_txs[0].size() > 5000)
@@ -3294,7 +3276,7 @@ void wallet2::refresh(bool trusted_daemon, uint64_t start_height, uint64_t & blo
   // since that might cause a password prompt, which would introduce a data
   // leak allowing a passive adversary with traffic analysis capability to
   // infer when we get an incoming output
-  std::vector<std::pair<cryptonote::transaction, bool>> process_pool_txs;
+  std::vector<std::tuple<cryptonote::transaction, crypto::hash, bool>> process_pool_txs;
   update_pool_state(process_pool_txs, true);
 
   bool first = true, last = false;
@@ -13619,22 +13601,4 @@ std::vector<cryptonote::public_node> wallet2::get_public_nodes(bool white_only)
   std::copy(res.gray.begin(), res.gray.end(), std::back_inserter(nodes));
   return nodes;
 }
-//----------------------------------------------------------------------------------------------------
-std::pair<size_t, uint64_t> wallet2::estimate_tx_size_and_weight(bool use_rct, int n_inputs, int ring_size, int n_outputs, size_t extra_size)
-{
-  THROW_WALLET_EXCEPTION_IF(n_inputs <= 0, tools::error::wallet_internal_error, "Invalid n_inputs");
-  THROW_WALLET_EXCEPTION_IF(n_outputs < 0, tools::error::wallet_internal_error, "Invalid n_outputs");
-  THROW_WALLET_EXCEPTION_IF(ring_size < 0, tools::error::wallet_internal_error, "Invalid ring size");
-
-  if (ring_size == 0)
-    ring_size = get_min_ring_size();
-  if (n_outputs == 1)
-    n_outputs = 2; // extra dummy output
-
-  const bool bulletproof = use_fork_rules(get_bulletproof_fork(), 0);
-  size_t size = estimate_tx_size(use_rct, n_inputs, ring_size - 1, n_outputs, extra_size, bulletproof);
-  uint64_t weight = estimate_tx_weight(use_rct, n_inputs, ring_size - 1, n_outputs, extra_size, bulletproof);
-  return std::make_pair(size, weight);
-}
-//----------------------------------------------------------------------------------------------------
 }

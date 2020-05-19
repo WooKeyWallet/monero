@@ -27,7 +27,6 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 // Adapted from Java code by Sarang Noether
-// Paper references are to https://eprint.iacr.org/2017/1066 (revision 1 July 2018)
 
 #include <stdlib.h>
 #include <boost/thread/mutex.hpp>
@@ -522,7 +521,6 @@ Bulletproof bulletproof_PROVE(const rct::keyV &sv, const rct::keyV &gamma)
   }
   PERF_TIMER_STOP_BP(PROVE_v);
 
-  // PAPER LINES 41-42
   PERF_TIMER_START_BP(PROVE_aLaR);
   for (size_t j = 0; j < M; ++j)
   {
@@ -568,14 +566,14 @@ try_again:
   rct::key hash_cache = rct::hash_to_scalar(V);
 
   PERF_TIMER_START_BP(PROVE_step1);
-  // PAPER LINES 43-44
+  // PAPER LINES 38-39
   rct::key alpha = rct::skGen();
   rct::key ve = vector_exponent(aL8, aR8);
   rct::key A;
   sc_mul(tmp.bytes, alpha.bytes, INV_EIGHT.bytes);
   rct::addKeys(A, ve, rct::scalarmultBase(tmp));
 
-  // PAPER LINES 45-47
+  // PAPER LINES 40-42
   rct::keyV sL = rct::skvGen(MN), sR = rct::skvGen(MN);
   rct::key rho = rct::skGen();
   ve = vector_exponent(sL, sR);
@@ -583,7 +581,7 @@ try_again:
   rct::addKeys(S, ve, rct::scalarmultBase(rho));
   S = rct::scalarmultKey(S, INV_EIGHT);
 
-  // PAPER LINES 48-50
+  // PAPER LINES 43-45
   rct::key y = hash_cache_mash(hash_cache, A, S);
   if (y == rct::zero())
   {
@@ -600,20 +598,24 @@ try_again:
   }
 
   // Polynomial construction by coefficients
-  // PAPER LINES 70-71
   rct::keyV l0 = vector_subtract(aL, z);
   const rct::keyV &l1 = sL;
 
+  // This computes the ugly sum/concatenation from PAPER LINE 65
   rct::keyV zero_twos(MN);
   const rct::keyV zpow = vector_powers(z, M+2);
-  for (size_t j = 0; j < M; ++j)
+  for (size_t i = 0; i < MN; ++i)
   {
-      for (size_t i = 0; i < N; ++i)
+    zero_twos[i] = rct::zero();
+    for (size_t j = 1; j <= M; ++j)
+    {
+      if (i >= (j-1)*N && i < j*N)
       {
-          CHECK_AND_ASSERT_THROW_MES(j+2 < zpow.size(), "invalid zpow index");
-          CHECK_AND_ASSERT_THROW_MES(i < twoN.size(), "invalid twoN index");
-          sc_mul(zero_twos[j*N+i].bytes,zpow[j+2].bytes,twoN[i].bytes);
+        CHECK_AND_ASSERT_THROW_MES(1+j < zpow.size(), "invalid zpow index");
+        CHECK_AND_ASSERT_THROW_MES(i-(j-1)*N < twoN.size(), "invalid twoN index");
+        sc_muladd(zero_twos[i].bytes, zpow[1+j].bytes, twoN[i-(j-1)*N].bytes, zero_twos[i].bytes);
       }
+    }
   }
 
   rct::keyV r0 = vector_add(aR, z);
@@ -622,7 +624,7 @@ try_again:
   r0 = vector_add(r0, zero_twos);
   rct::keyV r1 = hadamard(yMN, sR);
 
-  // Polynomial construction before PAPER LINE 51
+  // Polynomial construction before PAPER LINE 46
   rct::key t1_1 = inner_product(l0, r1);
   rct::key t1_2 = inner_product(l1, r0);
   rct::key t1;
@@ -632,7 +634,7 @@ try_again:
   PERF_TIMER_STOP_BP(PROVE_step1);
 
   PERF_TIMER_START_BP(PROVE_step2);
-  // PAPER LINES 52-53
+  // PAPER LINES 47-48
   rct::key tau1 = rct::skGen(), tau2 = rct::skGen();
 
   rct::key T1, T2;
@@ -646,7 +648,7 @@ try_again:
   ge_double_scalarmult_base_vartime_p3(&p3, tmp.bytes, &ge_p3_H, tmp2.bytes);
   ge_p3_tobytes(T2.bytes, &p3);
 
-  // PAPER LINES 54-56
+  // PAPER LINES 49-51
   rct::key x = hash_cache_mash(hash_cache, z, T1, T2);
   if (x == rct::zero())
   {
@@ -655,7 +657,7 @@ try_again:
     goto try_again;
   }
 
-  // PAPER LINES 61-63
+  // PAPER LINES 52-53
   rct::key taux;
   sc_mul(taux.bytes, tau1.bytes, x.bytes);
   rct::key xsq;
@@ -669,7 +671,7 @@ try_again:
   rct::key mu;
   sc_muladd(mu.bytes, x.bytes, rho.bytes, alpha.bytes);
 
-  // PAPER LINES 58-60
+  // PAPER LINES 54-57
   rct::keyV l = l0;
   l = vector_add(l, vector_scalar(l1, x));
   rct::keyV r = r0;
@@ -688,7 +690,7 @@ try_again:
   CHECK_AND_ASSERT_THROW_MES(test_t == t, "test_t check failed");
 #endif
 
-  // PAPER LINE 6
+  // PAPER LINES 32-33
   rct::key x_ip = hash_cache_mash(hash_cache, x, taux, mu, t);
   if (x_ip == rct::zero())
   {
@@ -723,19 +725,20 @@ try_again:
   PERF_TIMER_STOP_BP(PROVE_step3);
 
   PERF_TIMER_START_BP(PROVE_step4);
+  // PAPER LINE 13
   const rct::keyV *scale = &yinvpow;
   while (nprime > 1)
   {
-    // PAPER LINE 20
+    // PAPER LINE 15
     nprime /= 2;
 
-    // PAPER LINES 21-22
+    // PAPER LINES 16-17
     PERF_TIMER_START_BP(PROVE_inner_product);
     rct::key cL = inner_product(slice(aprime, 0, nprime), slice(bprime, nprime, bprime.size()));
     rct::key cR = inner_product(slice(aprime, nprime, aprime.size()), slice(bprime, 0, nprime));
     PERF_TIMER_STOP_BP(PROVE_inner_product);
 
-    // PAPER LINES 23-24
+    // PAPER LINES 18-19
     PERF_TIMER_START_BP(PROVE_LR);
     sc_mul(tmp.bytes, cL.bytes, x_ip.bytes);
     L[round] = cross_vector_exponent8(nprime, Gprime, nprime, Hprime, 0, aprime, 0, bprime, nprime, scale, &ge_p3_H, &tmp);
@@ -743,7 +746,7 @@ try_again:
     R[round] = cross_vector_exponent8(nprime, Gprime, 0, Hprime, nprime, aprime, nprime, bprime, 0, scale, &ge_p3_H, &tmp);
     PERF_TIMER_STOP_BP(PROVE_LR);
 
-    // PAPER LINES 25-27
+    // PAPER LINES 21-22
     w[round] = hash_cache_mash(hash_cache, L[round], R[round]);
     if (w[round] == rct::zero())
     {
@@ -752,7 +755,7 @@ try_again:
       goto try_again;
     }
 
-    // PAPER LINES 29-30
+    // PAPER LINES 24-25
     const rct::key winv = invert(w[round]);
     if (nprime > 1)
     {
@@ -762,7 +765,7 @@ try_again:
       PERF_TIMER_STOP_BP(PROVE_hadamard2);
     }
 
-    // PAPER LINES 33-34
+    // PAPER LINES 28-29
     PERF_TIMER_START_BP(PROVE_prime);
     aprime = vector_add(vector_scalar(slice(aprime, 0, nprime), w[round]), vector_scalar(slice(aprime, nprime, aprime.size()), winv));
     bprime = vector_add(vector_scalar(slice(bprime, 0, nprime), winv), vector_scalar(slice(bprime, nprime, bprime.size()), w[round]));
@@ -773,6 +776,7 @@ try_again:
   }
   PERF_TIMER_STOP_BP(PROVE_step4);
 
+  // PAPER LINE 58 (with inclusions from PAPER LINE 8 and PAPER LINE 20)
   return Bulletproof(std::move(V), A, S, T1, T2, taux, mu, std::move(L), std::move(R), aprime[0], bprime[0], t);
 }
 
@@ -806,10 +810,7 @@ struct proof_data_t
   size_t logM, inv_offset;
 };
 
-/* Given a range proof, determine if it is valid
- * This uses the method in PAPER LINES 95-105,
- *   weighted across multiple proofs in a batch
- */
+/* Given a range proof, determine if it is valid */
 bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
 {
   init_exponents();
@@ -870,6 +871,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
     CHECK_AND_ASSERT_MES(rounds > 0, false, "Zero rounds");
 
     PERF_TIMER_START_BP(VERIFY_line_21_22);
+    // PAPER LINES 21-22
     // The inner product challenges are computed per round
     pd.w.resize(rounds);
     for (size_t i = 0; i < rounds; ++i)
@@ -927,6 +929,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
     rct::key proof8_A = rct::scalarmult8(proof.A);
 
     PERF_TIMER_START_BP(VERIFY_line_61);
+    // PAPER LINE 61
     sc_mulsub(m_y0.bytes, proof.taux.bytes, weight_y.bytes, m_y0.bytes);
 
     const rct::keyV zpow = vector_powers(pd.z, M+3);
@@ -959,6 +962,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
     PERF_TIMER_STOP_BP(VERIFY_line_61rl_new);
 
     PERF_TIMER_START_BP(VERIFY_line_62);
+    // PAPER LINE 62
     multiexp_data.emplace_back(weight_z, proof8_A);
     sc_mul(tmp.bytes, pd.x.bytes, weight_z.bytes);
     multiexp_data.emplace_back(tmp, proof8_S);
@@ -969,6 +973,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
     CHECK_AND_ASSERT_MES(rounds > 0, false, "Zero rounds");
 
     PERF_TIMER_START_BP(VERIFY_line_24_25);
+    // Basically PAPER LINES 24-25
     // Compute the curvepoints from G[i] and H[i]
     rct::key yinvpow = rct::identity();
     rct::key ypow = rct::identity();
@@ -1005,6 +1010,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
       sc_mul(g_scalar.bytes, g_scalar.bytes, w_cache[i].bytes);
       sc_mul(h_scalar.bytes, h_scalar.bytes, w_cache[(~i) & (MN-1)].bytes);
 
+      // Adjust the scalars using the exponents from PAPER LINE 62
       sc_add(g_scalar.bytes, g_scalar.bytes, pd.z.bytes);
       CHECK_AND_ASSERT_MES(2+i/N < zpow.size(), false, "invalid zpow index");
       CHECK_AND_ASSERT_MES(i%N < twoN.size(), false, "invalid twoN index");
@@ -1037,6 +1043,7 @@ bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs)
 
     PERF_TIMER_STOP_BP(VERIFY_line_24_25);
 
+    // PAPER LINE 26
     PERF_TIMER_START_BP(VERIFY_line_26_new);
     sc_muladd(z1.bytes, proof.mu.bytes, weight_z.bytes, z1.bytes);
     for (size_t i = 0; i < rounds; ++i)

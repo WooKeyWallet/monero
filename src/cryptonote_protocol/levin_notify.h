@@ -35,7 +35,6 @@
 
 #include "byte_slice.h"
 #include "cryptonote_basic/blobdatatype.h"
-#include "cryptonote_protocol/fwd.h"
 #include "net/enums.h"
 #include "span.h"
 
@@ -50,6 +49,11 @@ namespace levin
 namespace nodetool
 {
   template<typename> struct p2p_connection_context_t;
+}
+
+namespace cryptonote
+{
+  struct cryptonote_connection_context;
 }
 
 namespace cryptonote

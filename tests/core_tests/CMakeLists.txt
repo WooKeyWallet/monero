@@ -40,7 +40,6 @@ set(core_tests_sources
   ring_signature_1.cpp
   transaction_tests.cpp
   tx_validation.cpp
-  tx_pool.cpp
   v2_tests.cpp
   rct.cpp
   bulletproofs.cpp
@@ -58,7 +57,6 @@ set(core_tests_headers
   integer_overflow.h
   multisig.h
   ring_signature_1.h
-  tx_pool.h
   transaction_tests.h
   tx_validation.h
   v2_tests.h

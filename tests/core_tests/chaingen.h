@@ -53,7 +53,6 @@
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_core.h"
-#include "cryptonote_protocol/enums.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
 #include "misc_language.h"
 
@@ -109,17 +108,17 @@ typedef serialized_object<cryptonote::transaction> serialized_transaction;
 
 struct event_visitor_settings
 {
-  int mask;
+  int valid_mask;
+  bool txs_keeped_by_block;
 
   enum settings
   {
-    set_txs_keeped_by_block = 1 << 0,
-    set_txs_do_not_relay = 1 << 1,
-    set_local_relay = 1 << 2
+    set_txs_keeped_by_block = 1 << 0
   };
 
-  event_visitor_settings(int a_mask = 0)
-    : mask(a_mask)
+  event_visitor_settings(int a_valid_mask = 0, bool a_txs_keeped_by_block = false)
+    : valid_mask(a_valid_mask)
+    , txs_keeped_by_block(a_txs_keeped_by_block)
   {
   }
 
@@ -129,7 +128,8 @@ private:
   template<class Archive>
   void serialize(Archive & ar, const unsigned int /*version*/)
   {
-    ar & mask;
+    ar & valid_mask;
+    ar & txs_keeped_by_block;
   }
 };
 
@@ -227,8 +227,8 @@ public:
     bf_hf_version= 1 << 8
   };
 
-  test_generator(): m_events(nullptr) {}
-  test_generator(const test_generator &other): m_blocks_info(other.m_blocks_info), m_events(other.m_events), m_nettype(other.m_nettype) {}
+  test_generator() {}
+  test_generator(const test_generator &other): m_blocks_info(other.m_blocks_info) {}
   void get_block_chain(std::vector<block_info>& blockchain, const crypto::hash& head, size_t n) const;
   void get_last_n_block_weights(std::vector<size_t>& block_weights, const crypto::hash& head, size_t n) const;
   uint64_t get_already_generated_coins(const crypto::hash& blk_id) const;
@@ -253,14 +253,9 @@ public:
     uint8_t hf_version = 1);
   bool construct_block_manually_tx(cryptonote::block& blk, const cryptonote::block& prev_block,
     const cryptonote::account_base& miner_acc, const std::vector<crypto::hash>& tx_hashes, size_t txs_size);
-  void fill_nonce(cryptonote::block& blk, const cryptonote::difficulty_type& diffic, uint64_t height);
-  void set_events(const std::vector<test_event_entry> * events) { m_events = events; }
-  void set_network_type(const cryptonote::network_type nettype) { m_nettype = nettype; }
 
 private:
   std::unordered_map<crypto::hash, block_info> m_blocks_info;
-  const std::vector<test_event_entry> * m_events;
-  cryptonote::network_type m_nettype;
 
   friend class boost::serialization::access;
 
@@ -412,6 +407,7 @@ cryptonote::account_public_address get_address(const cryptonote::tx_destination_
 
 inline cryptonote::difficulty_type get_test_difficulty(const boost::optional<uint8_t>& hf_ver=boost::none) {return !hf_ver || hf_ver.get() <= 1 ? 1 : 2;}
 inline uint64_t current_difficulty_window(const boost::optional<uint8_t>& hf_ver=boost::none){ return !hf_ver || hf_ver.get() <= 1 ? DIFFICULTY_TARGET_V1 : DIFFICULTY_TARGET_V2; }
+void fill_nonce(cryptonote::block& blk, const cryptonote::difficulty_type& diffic, uint64_t height);
 
 cryptonote::tx_destination_entry build_dst(const var_addr_t& to, bool is_subaddr=false, uint64_t amount=0);
 std::vector<cryptonote::tx_destination_entry> build_dsts(const var_addr_t& to1, bool sub1=false, uint64_t am1=0);
@@ -494,7 +490,6 @@ void fill_tx_sources_and_destinations(const std::vector<test_event_entry>& event
 uint64_t get_balance(const cryptonote::account_base& addr, const std::vector<cryptonote::block>& blockchain, const map_hash2tx_t& mtx);
 
 bool extract_hard_forks(const std::vector<test_event_entry>& events, v_hardforks_t& hard_forks);
-bool extract_hard_forks_from_blocks(const std::vector<test_event_entry>& events, v_hardforks_t& hard_forks);
 
 /************************************************************************/
 /*                                                                      */
@@ -508,7 +503,7 @@ private:
   t_test_class& m_validator;
   size_t m_ev_index;
 
-  cryptonote::relay_method m_tx_relay;
+  bool m_txs_keeped_by_block;
 
 public:
   push_core_event_visitor(cryptonote::core& c, const std::vector<test_event_entry>& events, t_test_class& validator)
@@ -516,7 +511,7 @@ public:
     , m_events(events)
     , m_validator(validator)
     , m_ev_index(0)
-    , m_tx_relay(cryptonote::relay_method::flood)
+    , m_txs_keeped_by_block(false)
   {
   }
 
@@ -535,21 +530,9 @@ public:
   {
     log_event("event_visitor_settings");
 
-    if (settings.mask & event_visitor_settings::set_txs_keeped_by_block)
+    if (settings.valid_mask & event_visitor_settings::set_txs_keeped_by_block)
     {
-      m_tx_relay = cryptonote::relay_method::block;
-    }
-    else if (settings.mask & event_visitor_settings::set_local_relay)
-    {
-      m_tx_relay = cryptonote::relay_method::local;
-    }
-    else if (settings.mask & event_visitor_settings::set_txs_do_not_relay)
-    {
-      m_tx_relay = cryptonote::relay_method::none;
-    }
-    else
-    {
-      m_tx_relay = cryptonote::relay_method::flood;
+      m_txs_keeped_by_block = settings.txs_keeped_by_block;
     }
 
     return true;
@@ -561,7 +544,7 @@ public:
 
     cryptonote::tx_verification_context tvc = AUTO_VAL_INIT(tvc);
     size_t pool_size = m_c.get_pool_transactions_count();
-    m_c.handle_incoming_tx({t_serializable_object_to_blob(tx), crypto::null_hash}, tvc, m_tx_relay, false);
+    m_c.handle_incoming_tx({t_serializable_object_to_blob(tx), crypto::null_hash}, tvc, m_txs_keeped_by_block, false, false);
     bool tx_added = pool_size + 1 == m_c.get_pool_transactions_count();
     bool r = m_validator.check_tx_verification_context(tvc, tx_added, m_ev_index, tx);
     CHECK_AND_NO_ASSERT_MES(r, false, "tx verification context check failed");
@@ -581,7 +564,7 @@ public:
       tvcs.push_back(tvc0);
     }
     size_t pool_size = m_c.get_pool_transactions_count();
-    m_c.handle_incoming_txs(tx_blobs, tvcs, m_tx_relay, false);
+    m_c.handle_incoming_txs(tx_blobs, tvcs, m_txs_keeped_by_block, false, false);
     size_t tx_added = m_c.get_pool_transactions_count() - pool_size;
     bool r = m_validator.check_tx_verification_context_array(tvcs, tx_added, m_ev_index, txs);
     CHECK_AND_NO_ASSERT_MES(r, false, "tx verification context check failed");
@@ -661,7 +644,7 @@ public:
 
     cryptonote::tx_verification_context tvc = AUTO_VAL_INIT(tvc);
     size_t pool_size = m_c.get_pool_transactions_count();
-    m_c.handle_incoming_tx(sr_tx.data, tvc, m_tx_relay, false);
+    m_c.handle_incoming_tx(sr_tx.data, tvc, m_txs_keeped_by_block, false, false);
     bool tx_added = pool_size + 1 == m_c.get_pool_transactions_count();
 
     cryptonote::transaction tx;
@@ -972,7 +955,7 @@ inline bool do_replay_file(const std::string& filename)
 
 #define MAKE_MINER_TX_MANUALLY(TX, BLK) MAKE_MINER_TX_AND_KEY_MANUALLY(TX, BLK, 0)
 
-#define SET_EVENT_VISITOR_SETT(VEC_EVENTS, SETT) VEC_EVENTS.push_back(event_visitor_settings(SETT));
+#define SET_EVENT_VISITOR_SETT(VEC_EVENTS, SETT, VAL) VEC_EVENTS.push_back(event_visitor_settings(SETT, VAL));
 
 #define GENERATE(filename, genclass) \
     { \
