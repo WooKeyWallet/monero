@@ -964,11 +964,12 @@ namespace cryptonote
     void add_txpool_tx(const crypto::hash &txid, const cryptonote::blobdata &blob, const txpool_tx_meta_t &meta);
     void update_txpool_tx(const crypto::hash &txid, const txpool_tx_meta_t &meta);
     void remove_txpool_tx(const crypto::hash &txid);
-    uint64_t get_txpool_tx_count(bool include_unrelayed_txes = true) const;
+    uint64_t get_txpool_tx_count(bool include_sensitive = false) const;
     bool get_txpool_tx_meta(const crypto::hash& txid, txpool_tx_meta_t &meta) const;
-    bool get_txpool_tx_blob(const crypto::hash& txid, cryptonote::blobdata &bd) const;
-    cryptonote::blobdata get_txpool_tx_blob(const crypto::hash& txid) const;
-    bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)>, bool include_blob = false, bool include_unrelayed_txes = true) const;
+    bool get_txpool_tx_blob(const crypto::hash& txid, cryptonote::blobdata &bd, relay_category tx_category) const;
+    cryptonote::blobdata get_txpool_tx_blob(const crypto::hash& txid, relay_category tx_category) const;
+    bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)>, bool include_blob = false, relay_category tx_category = relay_category::broadcasted) const;
+    bool txpool_tx_matches_category(const crypto::hash& tx_hash, relay_category category);
 
     bool is_within_compiled_block_hash_area() const { return is_within_compiled_block_hash_area(m_db->height()); }
     uint64_t prevalidate_block_hashes(uint64_t height, const std::vector<crypto::hash> &hashes, const std::vector<uint64_t> &weights);
@@ -1016,6 +1017,11 @@ namespace cryptonote
      */
     bool has_block_weights(uint64_t height, uint64_t nblocks) const;
 
+    /**
+     * @brief flush the invalid blocks set
+     */
+    void flush_invalid_blocks();
+
 #ifndef IN_UNIT_TESTS
   private:
 #endif
@@ -1042,7 +1048,7 @@ namespace cryptonote
     std::unordered_map<crypto::hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>> m_scan_table;
     std::unordered_map<crypto::hash, crypto::hash> m_blocks_longhash_table;
 
-    // SHA-3 hashes for each block and for fast pow checking
+    // Keccak hashes for each block and for fast pow checking
     std::vector<std::pair<crypto::hash, crypto::hash>> m_blocks_hash_of_hashes;
     std::vector<std::pair<crypto::hash, uint64_t>> m_blocks_hash_check;
     std::vector<crypto::hash> m_blocks_txs_check;
@@ -1206,10 +1212,11 @@ namespace cryptonote
      *
      * @param bl the block to be added
      * @param bvc metadata concerning the block's validity
+     * @param notify if set to true, sends new block notification on success
      *
      * @return true if the block was added successfully, otherwise false
      */
-    bool handle_block_to_main_chain(const block& bl, block_verification_context& bvc);
+    bool handle_block_to_main_chain(const block& bl, block_verification_context& bvc, bool notify = true);
 
     /**
      * @brief validate and add a new block to the end of the blockchain
@@ -1221,10 +1228,11 @@ namespace cryptonote
      * @param bl the block to be added
      * @param id the hash of the block
      * @param bvc metadata concerning the block's validity
+     * @param notify if set to true, sends new block notification on success
      *
      * @return true if the block was added successfully, otherwise false
      */
-    bool handle_block_to_main_chain(const block& bl, const crypto::hash& id, block_verification_context& bvc);
+    bool handle_block_to_main_chain(const block& bl, const crypto::hash& id, block_verification_context& bvc, bool notify = true);
 
     /**
      * @brief validate and add a new block to an alternate blockchain

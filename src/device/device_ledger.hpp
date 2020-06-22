@@ -34,7 +34,11 @@
 #include <string>
 #include "device.hpp"
 #include "log.hpp"
-#include "device_io_hid.hpp"
+#ifndef HAVE_MONERUJO
+ #include "device_io_hid.hpp"
+#else
+ #include "device_io_monerujo.hpp"
+#endif
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/recursive_mutex.hpp>
 
@@ -57,6 +61,46 @@ namespace hw {
     void register_all(std::map<std::string, std::unique_ptr<device>> &registry);
 
     #ifdef WITH_DEVICE_LEDGER
+
+    // Origin: https://github.com/LedgerHQ/ledger-app-monero/blob/master/src/monero_types.h
+    #define SW_BYTES_REMAINING_00                0x6100
+    #define SW_WARNING_STATE_UNCHANGED           0x6200
+    #define SW_STATE_TERMINATED                  0x6285
+    #define SW_MORE_DATA_AVAILABLE               0x6310
+    #define SW_WRONG_LENGTH                      0x6700
+    #define SW_LOGICAL_CHANNEL_NOT_SUPPORTED     0x6881
+    #define SW_SECURE_MESSAGING_NOT_SUPPORTED    0x6882
+    #define SW_LAST_COMMAND_EXPECTED             0x6883
+    #define SW_COMMAND_CHAINING_NOT_SUPPORTED    0x6884
+    #define SW_SECURITY_LOAD_KEY                 0x6900
+    #define SW_SECURITY_COMMITMENT_CONTROL       0x6911
+    #define SW_SECURITY_AMOUNT_CHAIN_CONTROL     0x6912
+    #define SW_SECURITY_COMMITMENT_CHAIN_CONTROL 0x6913
+    #define SW_SECURITY_OUTKEYS_CHAIN_CONTROL    0x6914
+    #define SW_SECURITY_MAXOUTPUT_REACHED        0x6915
+    #define SW_SECURITY_TRUSTED_INPUT            0x6916
+    #define SW_CLIENT_NOT_SUPPORTED              0x6930
+    #define SW_SECURITY_STATUS_NOT_SATISFIED     0x6982
+    #define SW_FILE_INVALID                      0x6983
+    #define SW_PIN_BLOCKED                       0x6983
+    #define SW_DATA_INVALID                      0x6984
+    #define SW_CONDITIONS_NOT_SATISFIED          0x6985
+    #define SW_COMMAND_NOT_ALLOWED               0x6986
+    #define SW_APPLET_SELECT_FAILED              0x6999
+    #define SW_WRONG_DATA                        0x6a80
+    #define SW_FUNC_NOT_SUPPORTED                0x6a81
+    #define SW_FILE_NOT_FOUND                    0x6a82
+    #define SW_RECORD_NOT_FOUND                  0x6a83
+    #define SW_FILE_FULL                         0x6a84
+    #define SW_INCORRECT_P1P2                    0x6a86
+    #define SW_REFERENCED_DATA_NOT_FOUND         0x6a88
+    #define SW_WRONG_P1P2                        0x6b00
+    #define SW_CORRECT_LENGTH_00                 0x6c00
+    #define SW_INS_NOT_SUPPORTED                 0x6d00
+    #define SW_CLA_NOT_SUPPORTED                 0x6e00
+    #define SW_UNKNOWN                           0x6f00
+    #define SW_OK                                0x9000
+    #define SW_ALGORITHM_UNSUPPORTED             0x9484
 
     namespace {
         bool apdu_verbose =true;
@@ -119,7 +163,11 @@ namespace hw {
         mutable boost::mutex   command_locker;
 
         //IO
+#ifndef HAVE_MONERUJO
         hw::io::device_io_hid hw_device;
+#else
+        hw::io::device_io_monerujo hw_device;
+#endif
         unsigned int  length_send;
         unsigned char buffer_send[BUFFER_SEND_SIZE];
         unsigned int  length_recv;
@@ -128,8 +176,8 @@ namespace hw {
         unsigned int  id;
         void logCMD(void);
         void logRESP(void);
-        unsigned int exchange(unsigned int ok=0x9000, unsigned int mask=0xFFFF);
-        unsigned int exchange_wait_on_input(unsigned int ok=0x9000, unsigned int mask=0xFFFF);
+        unsigned int exchange(unsigned int ok=SW_OK, unsigned int mask=0xFFFF);
+        unsigned int exchange_wait_on_input(unsigned int ok=SW_OK, unsigned int mask=0xFFFF);
         void reset_buffer(void);
         int  set_command_header(unsigned char ins, unsigned char p1 = 0x00, unsigned char p2 = 0x00);
         int  set_command_header_noopt(unsigned char ins, unsigned char p1 = 0x00, unsigned char p2 = 0x00);
@@ -235,6 +283,8 @@ namespace hw {
         
         bool  open_tx(crypto::secret_key &tx_key) override;
 
+        void get_transaction_prefix_hash(const cryptonote::transaction_prefix& tx, crypto::hash& h) override;
+    
         bool  encrypt_payment_id(crypto::hash8 &payment_id, const crypto::public_key &public_key, const crypto::secret_key &secret_key) override;
 
         rct::key genCommitmentMask(const rct::key &amount_key) override;

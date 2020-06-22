@@ -44,8 +44,6 @@ using namespace epee;
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "cn"
 
-#define ENCRYPTED_PAYMENT_ID_TAIL 0x8d
-
 // #define ENABLE_HASH_CASH_INTEGRITY_CHECK
 
 using namespace crypto;
@@ -128,6 +126,20 @@ namespace cryptonote
 namespace cryptonote
 {
   //---------------------------------------------------------------
+  void get_transaction_prefix_hash(const transaction_prefix& tx, crypto::hash& h, hw::device &hwdev)
+  {
+    hwdev.get_transaction_prefix_hash(tx,h);    
+  }
+
+  //---------------------------------------------------------------  
+  crypto::hash get_transaction_prefix_hash(const transaction_prefix& tx, hw::device &hwdev)
+  {
+    crypto::hash h = null_hash;
+    get_transaction_prefix_hash(tx, h, hwdev);
+    return h;
+  }
+  
+  //---------------------------------------------------------------  
   void get_transaction_prefix_hash(const transaction_prefix& tx, crypto::hash& h)
   {
     std::ostringstream s;
@@ -148,6 +160,8 @@ namespace cryptonote
     if (tx.version >= 2 && !is_coinbase(tx))
     {
       rct::rctSig &rv = tx.rct_signatures;
+      if (rv.type == rct::RCTTypeNull)
+        return true;
       if (rv.outPk.size() != tx.vout.size())
       {
         LOG_PRINT_L1("Failed to parse transaction from blob, bad outPk size in tx " << get_transaction_hash(tx));
@@ -996,17 +1010,31 @@ namespace cryptonote
     }
   }
   //---------------------------------------------------------------
-  std::string print_money(uint64_t amount, unsigned int decimal_point)
+  static void insert_money_decimal_point(std::string &s, unsigned int decimal_point)
   {
     if (decimal_point == (unsigned int)-1)
       decimal_point = default_decimal_point;
-    std::string s = std::to_string(amount);
     if(s.size() < decimal_point+1)
     {
       s.insert(0, decimal_point+1 - s.size(), '0');
     }
     if (decimal_point > 0)
       s.insert(s.size() - decimal_point, ".");
+  }
+  //---------------------------------------------------------------
+  std::string print_money(uint64_t amount, unsigned int decimal_point)
+  {
+    std::string s = std::to_string(amount);
+    insert_money_decimal_point(s, decimal_point);
+    return s;
+  }
+  //---------------------------------------------------------------
+  std::string print_money(const boost::multiprecision::uint128_t &amount, unsigned int decimal_point)
+  {
+    std::stringstream ss;
+    ss << amount;
+    std::string s = ss.str();
+    insert_money_decimal_point(s, decimal_point);
     return s;
   }
   //---------------------------------------------------------------
