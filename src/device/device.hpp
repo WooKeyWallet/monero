@@ -35,7 +35,16 @@
 #include "cryptonote_config.h"
 
 
-#if defined(HAVE_HIDAPI) || defined(HAVE_MONERUJO)
+#ifndef USE_DEVICE_LEDGER
+#define USE_DEVICE_LEDGER 1
+#endif
+
+#if !defined(HAVE_HIDAPI) 
+#undef  USE_DEVICE_LEDGER
+#define USE_DEVICE_LEDGER 0
+#endif
+
+#if USE_DEVICE_LEDGER
 #define WITH_DEVICE_LEDGER
 #endif
 

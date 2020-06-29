@@ -437,10 +437,7 @@ if(STATIC AND NOT IOS)
   endif()
 endif()
 
-option(MONERUJO_HIDAPI "HIDAPI is handled by Monerujo" OFF)
-if(NOT MONERUJO_HIDAPI)
-  find_package(HIDAPI)
-endif()
+# find_package(HIDAPI)
 
 add_definition_if_library_exists(c memset_s "string.h" HAVE_MEMSET_S)
 add_definition_if_library_exists(c explicit_bzero "strings.h" HAVE_EXPLICIT_BZERO)
