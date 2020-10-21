@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -37,7 +37,6 @@
 #define CRYPTONOTE_DNS_TIMEOUT_MS                       20000
 
 #define CRYPTONOTE_MAX_BLOCK_NUMBER                     500000000
-#define CRYPTONOTE_GETBLOCKTEMPLATE_MAX_BLOCK_SIZE	196608 //size of block (bytes) that is the maximum that miners will produce
 #define CRYPTONOTE_MAX_TX_SIZE                          1000000
 #define CRYPTONOTE_MAX_TX_PER_BLOCK                     0x10000000
 #define CRYPTONOTE_PUBLIC_ADDRESS_TEXTBLOB_VER          0
@@ -117,6 +116,11 @@
 #define CRYPTONOTE_NOISE_BYTES                          3*1024 // 3 KiB
 #define CRYPTONOTE_NOISE_CHANNELS                       2      // Max outgoing connections per zone used for noise/covert sending
 
+// Both below are in seconds. The idea is to delay forwarding from i2p/tor
+// to ipv4/6, such that 2+ incoming connections _could_ have sent the tx
+#define CRYPTONOTE_FORWARD_DELAY_BASE (CRYPTONOTE_NOISE_MIN_DELAY + CRYPTONOTE_NOISE_DELAY_RANGE)
+#define CRYPTONOTE_FORWARD_DELAY_AVERAGE (CRYPTONOTE_FORWARD_DELAY_BASE + (CRYPTONOTE_FORWARD_DELAY_BASE / 2))
+
 #define CRYPTONOTE_MAX_FRAGMENTS                        20 // ~20 * NOISE_BYTES max payload size for covert/noise send
 
 #define COMMAND_RPC_GET_BLOCKS_FAST_MAX_COUNT           1000
@@ -124,7 +128,7 @@
 #define P2P_LOCAL_WHITE_PEERLIST_LIMIT                  1000
 #define P2P_LOCAL_GRAY_PEERLIST_LIMIT                   5000
 
-#define P2P_DEFAULT_CONNECTIONS_COUNT                   8
+#define P2P_DEFAULT_CONNECTIONS_COUNT                   12
 #define P2P_DEFAULT_HANDSHAKE_INTERVAL                  60           //secondes
 #define P2P_DEFAULT_PACKET_MAX_SIZE                     50000000     //50000000 bytes maximum packet size
 #define P2P_DEFAULT_PEERS_IN_HANDSHAKE                  250
@@ -150,7 +154,6 @@
 #define RPC_IP_FAILS_BEFORE_BLOCK                       3
 
 #define CRYPTONOTE_NAME                         "bitmonero"
-#define CRYPTONOTE_POOLDATA_FILENAME            "poolstate.bin"
 #define CRYPTONOTE_BLOCKCHAINDATA_FILENAME      "data.mdb"
 #define CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME "lock.mdb"
 #define P2P_NET_DATA_FILENAME                   "p2pstate.bin"
@@ -173,6 +176,9 @@
 #define HF_VERSION_REJECT_SIGS_IN_COINBASE      12
 #define HF_VERSION_ENFORCE_MIN_AGE              12
 #define HF_VERSION_EFFECTIVE_SHORT_TERM_MEDIAN_IN_PENALTY 12
+#define HF_VERSION_EXACT_COINBASE               13
+#define HF_VERSION_CLSAG                        13
+#define HF_VERSION_DETERMINISTIC_UNLOCK_TIME    13
 
 #define PER_KB_FEE_QUANTIZATION_DECIMALS        8
 
@@ -219,6 +225,11 @@ namespace config
   const unsigned char HASH_KEY_RPC_PAYMENT_NONCE = 0x58;
   const unsigned char HASH_KEY_MEMORY = 'k';
   const unsigned char HASH_KEY_MULTISIG[] = {'M', 'u', 'l', 't' , 'i', 's', 'i', 'g', 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+  const unsigned char HASH_KEY_TXPROOF_V2[] = "TXPROOF_V2";
+  const unsigned char HASH_KEY_CLSAG_ROUND[] = "CLSAG_round";
+  const unsigned char HASH_KEY_CLSAG_AGG_0[] = "CLSAG_agg_0";
+  const unsigned char HASH_KEY_CLSAG_AGG_1[] = "CLSAG_agg_1";
+  const char HASH_KEY_MESSAGE_SIGNING[] = "MoneroMessageSignature";
 
   namespace testnet
   {

@@ -2,7 +2,7 @@
 /// @author rfree (current maintainer/user in monero.cc project - most of code is from CryptoNote)
 /// @brief This is the original cryptonote protocol network-events handler, modified by us
 
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 //
 // All rights reserved.
 //
@@ -935,7 +935,19 @@ namespace cryptonote
       return 1;
     }
 
-    relay_method tx_relay;
+    /* If the txes were received over i2p/tor, the default is to "forward"
+       with a randomized delay to further enhance the "white noise" behavior,
+       potentially making it harder for ISP-level spies to determine which
+       inbound link sent the tx. If the sender disabled "white noise" over
+       i2p/tor, then the sender is "fluffing" (to only outbound) i2p/tor
+       connections with the `dandelionpp_fluff` flag set. The receiver (hidden
+       service) will immediately fluff in that scenario (i.e. this assumes that a
+       sybil spy will be unable to link an IP to an i2p/tor connection). */
+
+    const epee::net_utils::zone zone = context.m_remote_address.get_zone();
+    relay_method tx_relay = zone == epee::net_utils::zone::public_ ?
+      relay_method::stem : relay_method::forward;
+
     std::vector<blobdata> stem_txs{};
     std::vector<blobdata> fluff_txs{};
     if (arg.dandelionpp_fluff)
@@ -944,10 +956,7 @@ namespace cryptonote
       fluff_txs.reserve(arg.txs.size());
     }
     else
-    {
-      tx_relay = relay_method::stem;
       stem_txs.reserve(arg.txs.size());
-    }
 
     for (auto& tx : arg.txs)
     {
@@ -970,6 +979,7 @@ namespace cryptonote
           fluff_txs.push_back(std::move(tx));
           break;
         default:
+        case relay_method::forward: // not supposed to happen here
         case relay_method::none:
           break;
       }
@@ -1927,8 +1937,8 @@ skip:
     if (local_stripe == 0)
       return false;
     // don't request pre-bulletprooof pruned blocks, we can't reconstruct their weight (yet)
-    static const uint64_t bp_fork_height = m_core.get_earliest_ideal_height_for_version(8);
-    if (first_block_height + nblocks - 1 < bp_fork_height)
+    static const uint64_t bp_fork_height = m_core.get_earliest_ideal_height_for_version(HF_VERSION_SMALLER_BP);
+    if (first_block_height < bp_fork_height)
       return false;
     // assumes the span size is less or equal to the stripe size
     bool full_data_needed = tools::get_pruning_stripe(first_block_height, context.m_remote_blockchain_height, CRYPTONOTE_PRUNING_LOG_STRIPES) == local_stripe
@@ -2528,7 +2538,7 @@ skip:
        local mempool before doing the relay. The code was already updating the
        DB twice on received transactions - it is difficult to workaround this
        due to the internal design. */
-    return m_p2p->send_txs(std::move(arg.txs), zone, source, m_core, tx_relay) != epee::net_utils::zone::invalid;
+    return m_p2p->send_txs(std::move(arg.txs), zone, source, tx_relay) != epee::net_utils::zone::invalid;
   }
   //------------------------------------------------------------------------------------------------------------------------
   template<class t_core>

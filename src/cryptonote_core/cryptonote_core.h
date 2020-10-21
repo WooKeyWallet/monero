@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 //
 // All rights reserved.
 //
@@ -32,9 +32,11 @@
 
 #include <ctime>
 
+#include <boost/function.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include "cryptonote_basic/fwd.h"
 #include "cryptonote_core/i_core_events.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler_common.h"
 #include "cryptonote_protocol/enums.h"
@@ -48,6 +50,7 @@
 #include "warnings.h"
 #include "crypto/hash.h"
 #include "span.h"
+#include "rpc/fwd.h"
 
 PUSH_WARNINGS
 DISABLE_VS_WARNINGS(4355)
@@ -228,8 +231,8 @@ namespace cryptonote
       *
       * @note see Blockchain::create_block_template
       */
-     virtual bool get_block_template(block& b, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce);
-     virtual bool get_block_template(block& b, const crypto::hash *prev_block, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce);
+     virtual bool get_block_template(block& b, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce, uint64_t &seed_height, crypto::hash &seed_hash);
+     virtual bool get_block_template(block& b, const crypto::hash *prev_block, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce, uint64_t &seed_height, crypto::hash &seed_hash);
 
      /**
       * @brief called when a transaction is relayed.
@@ -446,6 +449,13 @@ namespace cryptonote
      void set_enforce_dns_checkpoints(bool enforce_dns);
 
      /**
+      * @brief set a listener for txes being added to the txpool
+      *
+      * @param callable to notify, or empty function to disable.
+      */
+     void set_txpool_listener(boost::function<void(std::vector<txpool_event>)> zmq_pub);
+
+     /**
       * @brief set whether or not to enable or disable DNS checkpoints
       *
       * @param disble whether to disable DNS checkpoints
@@ -653,7 +663,7 @@ namespace cryptonote
       *
       * @param target_blockchain_height the target height
       */
-     uint64_t get_target_blockchain_height() const;
+     virtual uint64_t get_target_blockchain_height() const override;
 
      /**
       * @brief returns the newest hardfork version known to the blockchain
@@ -1028,6 +1038,13 @@ namespace cryptonote
       */
      bool check_block_rate();
 
+     /**
+      * @brief recalculate difficulties after the last difficulty checklpoint to circumvent the annoying 'difficulty drift' bug
+      *
+      * @return true
+      */
+     bool recalculate_difficulties();
+
      bool m_test_drop_download = true; //!< whether or not to drop incoming blocks (for testing)
 
      uint64_t m_test_drop_download_height = 0; //!< height under which to drop incoming blocks, if doing so
@@ -1053,6 +1070,7 @@ namespace cryptonote
      epee::math_helper::once_a_time_seconds<60*10, true> m_check_disk_space_interval; //!< interval for checking for disk space
      epee::math_helper::once_a_time_seconds<90, false> m_block_rate_interval; //!< interval for checking block rate
      epee::math_helper::once_a_time_seconds<60*60*5, true> m_blockchain_pruning_interval; //!< interval for incremental blockchain pruning
+     epee::math_helper::once_a_time_seconds<60*60*24*7, false> m_diff_recalc_interval; //!< interval for recalculating difficulties
 
      std::atomic<bool> m_starter_message_showed; //!< has the "daemon will sync now" message been shown?
 
@@ -1090,7 +1108,12 @@ namespace cryptonote
      bool m_fluffy_blocks_enabled;
      bool m_offline;
 
+    /* `boost::function` is used because the implementation never allocates if
+       the callable object has a single `std::shared_ptr` or `std::weap_ptr`
+       internally. Whereas, the libstdc++ `std::function` will allocate. */
+
      std::shared_ptr<tools::Notify> m_block_rate_notify;
+     boost::function<void(std::vector<txpool_event>)> m_zmq_pub;
    };
 }
 

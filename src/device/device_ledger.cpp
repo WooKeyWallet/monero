@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, The Monero Project
+// Copyright (c) 2017-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -259,7 +259,7 @@ namespace hw {
 
     static int device_id = 0;
 
-    #define PROTOCOL_VERSION                    3
+    #define PROTOCOL_VERSION                    4
 
     #define INS_NONE                            0x00
     #define INS_RESET                           0x02
@@ -299,6 +299,7 @@ namespace hw {
     #define INS_PREFIX_HASH                     0x7D
     #define INS_VALIDATE                        0x7C
     #define INS_MLSAG                           0x7E
+    #define INS_CLSAG                           0x7F
     #define INS_CLOSE_TX                        0x80
 
     #define INS_GET_TX_PROOF                    0xA0
@@ -1108,7 +1109,7 @@ namespace hw {
         for(size_t n=0; n < additional_derivations.size();++n) {
           if(derivation == additional_derivations[n]) {
             pkey = &additional_tx_pub_keys[n];
-            MDEBUG("conceal derivation with additionnal tx pub key");
+            MDEBUG("conceal derivation with additional tx pub key");
             break;
           }
         }
@@ -1468,8 +1469,8 @@ namespace hw {
         offset = set_command_header(INS_PREFIX_HASH,2,cnt);      
         len = pref_length - pref_offset;
         //options
-        if (len > (BUFFER_SEND_SIZE-7)) {
-          len = BUFFER_SEND_SIZE-7;
+        if (len > (BUFFER_SEND_SIZE-offset-3)) {
+          len = BUFFER_SEND_SIZE-offset-3;
           this->buffer_send[offset] = 0x80;
         } else {
           this->buffer_send[offset] = 0x00;
@@ -1548,7 +1549,7 @@ namespace hw {
       const bool                               need_additional_txkeys_x       = need_additional_txkeys;
       
       std::vector<crypto::secret_key>    additional_tx_keys_x;
-      for (const auto k: additional_tx_keys) {
+      for (const auto &k: additional_tx_keys) {
         additional_tx_keys_x.push_back(hw::ledger::decrypt(k));
       }
       
@@ -1640,20 +1641,20 @@ namespace hw {
       
       //if (tx_version > 1)
       {
-        ASSERT_X(recv_len>=32, "Not enought data from device");
+        ASSERT_X(recv_len>=32, "Not enough data from device");
         crypto::secret_key scalar1;
         this->receive_secret((unsigned char*)scalar1.data, offset);
         amount_keys.push_back(rct::sk2rct(scalar1));
         recv_len -= 32;
       }
-      ASSERT_X(recv_len>=32, "Not enought data from device");
+      ASSERT_X(recv_len>=32, "Not enough data from device");
       memmove(out_eph_public_key.data, &this->buffer_recv[offset], 32);
       recv_len -= 32;
       offset += 32;
 
       if (need_additional_txkeys)
       {
-        ASSERT_X(recv_len>=32, "Not enought data from device");
+        ASSERT_X(recv_len>=32, "Not enough data from device");
         memmove(additional_txkey.pub.data, &this->buffer_recv[offset], 32);
         additional_tx_public_keys.push_back(additional_txkey.pub);
         offset += 32;
@@ -1857,7 +1858,7 @@ namespace hw {
 
         // ======  Aout, Bout, AKout, C, v, k ======
         kv_offset = data_offset;
-        if (type==rct::RCTTypeBulletproof2) {
+        if (type==rct::RCTTypeBulletproof2 || type==rct::RCTTypeCLSAG) {
           C_offset = kv_offset+ (8)*outputs_size;
         } else {
           C_offset = kv_offset+ (32+32)*outputs_size;
@@ -1874,7 +1875,7 @@ namespace hw {
           offset = set_command_header(INS_VALIDATE, 0x02, i+1);
           //options
           this->buffer_send[offset] = (i==outputs_size-1)? 0x00:0x80 ;
-          this->buffer_send[offset] |= (type==rct::RCTTypeBulletproof2)?0x02:0x00;
+          this->buffer_send[offset] |= (type==rct::RCTTypeBulletproof2 || type==rct::RCTTypeCLSAG)?0x02:0x00;
           offset += 1;
           //is_subaddress
           this->buffer_send[offset] = outKeys.is_subaddress;
@@ -1895,7 +1896,7 @@ namespace hw {
           memmove(this->buffer_send+offset, data+C_offset,32);
           offset += 32;
           C_offset += 32;
-          if (type==rct::RCTTypeBulletproof2) {
+          if (type==rct::RCTTypeBulletproof2 || type==rct::RCTTypeCLSAG) {
             //k
             memset(this->buffer_send+offset, 0, 32);
             offset += 32;
@@ -2120,6 +2121,159 @@ namespace hw {
 
         return true;
     }
+
+    bool device_ledger::clsag_prepare(const rct::key &p, const rct::key &z, rct::key &I, rct::key &D, const rct::key &H, rct::key &a, rct::key &aG, rct::key &aH) {
+        AUTO_LOCK_CMD();
+        #ifdef DEBUG_HWDEVICE
+        const rct::key p_x   = hw::ledger::decrypt(p);
+        const rct::key z_x   = z;
+        rct::key       I_x;
+        rct::key       D_x;
+        const rct::key H_x   = H;
+        rct::key       a_x;
+        rct::key       aG_x;
+        rct::key       aH_x;
+        this->controle_device->clsag_prepare(p_x, z_x, I_x, D_x, H_x, a_x, aG_x, aH_x);
+        #endif
+
+        /*
+        rct::skpkGen(a,aG); // aG = a*G
+        rct::scalarmultKey(aH,H,a); // aH = a*H
+        rct::scalarmultKey(I,H,p); // I = p*H
+        rct::scalarmultKey(D,H,z); // D = z*H
+        */
+        int offset = set_command_header_noopt(INS_CLSAG, 0x01);
+        //p
+        this->send_secret(p.bytes, offset);
+        //z
+        memmove(this->buffer_send+offset, z.bytes, 32);
+        offset += 32;
+        //H
+        memmove(this->buffer_send+offset, H.bytes, 32);
+        offset += 32;
+
+        this->buffer_send[4] = offset-5;
+        this->length_send = offset;
+        this->exchange();
+
+        offset = 0;
+        //a
+        this->receive_secret(a.bytes, offset);
+        //aG
+        memmove(aG.bytes, this->buffer_recv+offset, 32);
+        offset +=32;
+        //aH
+        memmove(aH.bytes, this->buffer_recv+offset, 32);
+        offset +=32;
+        //I = pH
+        memmove(I.bytes, this->buffer_recv+offset, 32);
+        offset +=32;
+        //D = zH
+        memmove(D.bytes, this->buffer_recv+offset, 32);
+        offset +=32;
+
+        #ifdef DEBUG_HWDEVICE
+        hw::ledger::check32("clsag_prepare", "I", (char*)I_x.bytes, (char*)I.bytes);
+        hw::ledger::check32("clsag_prepare", "D", (char*)D_x.bytes, (char*)D.bytes);
+        hw::ledger::check32("clsag_prepare", "a", (char*)a_x.bytes, (char*)a.bytes);
+        hw::ledger::check32("clsag_prepare", "aG", (char*)aG_x.bytes, (char*)aG.bytes);
+        hw::ledger::check32("clsag_prepare", "aH", (char*)aH_x.bytes, (char*)aH.bytes);
+        #endif
+
+        return true;
+    }
+
+    bool device_ledger::clsag_hash(const rct::keyV &data, rct::key &hash) {
+        AUTO_LOCK_CMD();
+
+        #ifdef DEBUG_HWDEVICE
+        const rct::keyV data_x  = data;
+        rct::key        hash_x;
+        this->controle_device->mlsag_hash(data_x, hash_x);
+        #endif
+
+        size_t cnt;
+        int offset;
+
+        cnt = data.size();
+        for (size_t i = 0; i<cnt; i++) {
+          offset = set_command_header(INS_CLSAG, 0x02, i+1);
+          //options
+          this->buffer_send[offset] = (i==(cnt-1))?0x00:0x80;  //last
+          offset += 1;
+          //msg part
+          memmove(this->buffer_send+offset, data[i].bytes, 32);
+          offset += 32;
+
+          this->buffer_send[4] = offset-5;
+          this->length_send = offset;
+          this->exchange();
+        }
+
+        //c/hash
+        memmove(hash.bytes, &this->buffer_recv[0], 32);
+
+        #ifdef DEBUG_HWDEVICE
+        hw::ledger::check32("mlsag_hash", "hash", (char*)hash_x.bytes, (char*)hash.bytes);
+        #endif
+        return true;
+    }
+
+    bool device_ledger::clsag_sign(const rct::key &c, const rct::key &a, const rct::key &p, const rct::key &z, const rct::key &mu_P, const rct::key &mu_C, rct::key &s) {
+        AUTO_LOCK_CMD();
+
+        #ifdef DEBUG_HWDEVICE
+        const rct::key c_x    = c;
+        const rct::key a_x    = hw::ledger::decrypt(a);
+        const rct::key p_x    = hw::ledger::decrypt(p);
+        const rct::key z_x    = z;
+        const rct::key mu_P_x = mu_P;
+        const rct::key mu_C_x = mu_C;
+        rct::key       s_x;
+        this->controle_device->clsag_sign(c_x, a_x, p_x, z_x, mu_P_x, mu_C_x, s_x);
+        #endif
+
+        /*
+        rct::key s0_p_mu_P;
+        sc_mul(s0_p_mu_P.bytes,mu_P.bytes,p.bytes);
+        rct::key s0_add_z_mu_C;
+        sc_muladd(s0_add_z_mu_C.bytes,mu_C.bytes,z.bytes,s0_p_mu_P.bytes);
+        sc_mulsub(s.bytes,c.bytes,s0_add_z_mu_C.bytes,a.bytes);
+        */
+
+        int offset = set_command_header_noopt(INS_CLSAG, 0x03);
+
+        //c
+        //discard, unse internal one
+        //a
+        this->send_secret(a.bytes, offset);
+        //p
+        this->send_secret(p.bytes, offset);
+        //z
+        memmove(this->buffer_send+offset, z.bytes, 32);
+        offset += 32;
+        //mu_P
+        memmove(this->buffer_send+offset, mu_P.bytes, 32);
+        offset += 32;
+        //mu_C
+        memmove(this->buffer_send+offset, mu_C.bytes, 32);
+        offset += 32;
+
+        this->buffer_send[4] = offset-5;
+        this->length_send = offset;
+        this->exchange();
+
+        offset = 0;
+        //s
+        memmove(s.bytes, this->buffer_recv+offset, 32);
+
+        #ifdef DEBUG_HWDEVICE
+        hw::ledger::check32("clsag_sign", "s", (char*)s_x.bytes, (char*)s.bytes);
+        #endif
+
+        return true;
+    }
+
 
     bool device_ledger::close_tx() {
         AUTO_LOCK_CMD();

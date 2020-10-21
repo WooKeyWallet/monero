@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -1116,7 +1116,7 @@ std::string get_nix_version_display_string()
     static constexpr const byte_map sizes[] =
     {
         {"%.0f B", 1024},
-        {"%.2f KB", 1024 * 1024},
+        {"%.2f kB", 1024 * 1024},
         {"%.2f MB", std::uint64_t(1024) * 1024 * 1024},
         {"%.2f GB", std::uint64_t(1024) * 1024 * 1024 * 1024},
         {"%.2f TB", std::uint64_t(1024) * 1024 * 1024 * 1024 * 1024}

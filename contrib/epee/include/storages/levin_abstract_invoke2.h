@@ -28,6 +28,7 @@
 
 #include "portable_storage_template_helper.h"
 #include <boost/utility/value_init.hpp>
+#include <functional>
 #include "span.h"
 #include "net/levin_base.h"
 
@@ -290,24 +291,25 @@ namespace epee
 #define BEGIN_INVOKE_MAP2(owner_type) \
   template <class t_context> int handle_invoke_map(bool is_notify, int command, const epee::span<const uint8_t> in_buff, std::string& buff_out, t_context& context, bool& handled) \
   { \
+  try { \
   typedef owner_type internal_owner_type_name;
 
 #define HANDLE_INVOKE2(command_id, func, type_name_in, typename_out) \
   if(!is_notify && command_id == command) \
-  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, type_name_in, typename_out>(this, command, in_buff, buff_out, boost::bind(func, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4), context);}
+  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, type_name_in, typename_out>(this, command, in_buff, buff_out, std::bind(func, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), context);}
 
 #define HANDLE_INVOKE_T2(COMMAND, func) \
   if(!is_notify && COMMAND::ID == command) \
-  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, typename COMMAND::request, typename COMMAND::response>(command, in_buff, buff_out, boost::bind(func, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4), context);}
+  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, typename COMMAND::request, typename COMMAND::response>(command, in_buff, buff_out, std::bind(func, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), context);}
 
 
 #define HANDLE_NOTIFY2(command_id, func, type_name_in) \
   if(is_notify && command_id == command) \
-  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, type_name_in>(this, command, in_buff, boost::bind(func, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3), context);}
+  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, type_name_in>(this, command, in_buff, std::bind(func, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), context);}
 
 #define HANDLE_NOTIFY_T2(NOTIFY, func) \
   if(is_notify && NOTIFY::ID == command) \
-  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, typename NOTIFY::request>(this, command, in_buff, boost::bind(func, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3), context);}
+  {handled=true;return epee::net_utils::buff_to_t_adapter<internal_owner_type_name, typename NOTIFY::request>(this, command, in_buff, std::bind(func, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3), context);}
 
 
 #define CHAIN_INVOKE_MAP2(func) \
@@ -335,7 +337,13 @@ namespace epee
   LOG_ERROR("Unknown command:" << command); \
   on_levin_traffic(context, false, false, true, in_buff.size(), "invalid-command"); \
   return LEVIN_ERROR_CONNECTION_HANDLER_NOT_DEFINED; \
+  } \
+  catch (const std::exception &e) { \
+    MERROR("Error in handle_invoke_map: " << e.what()); \
+    return LEVIN_ERROR_CONNECTION_TIMEDOUT; /* seems kinda appropriate */ \
+  } \
   }
+
   }
 }
 

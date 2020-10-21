@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, The Monero Project
+// Copyright (c) 2017-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -182,7 +182,12 @@ namespace rpc
       for (const auto& blob : it->second)
       {
         bwt.transactions.emplace_back();
-        if (!parse_and_validate_tx_from_blob(blob.second, bwt.transactions.back()))
+        bwt.transactions.back().pruned = req.prune;
+
+        const bool parsed = req.prune ?
+          parse_and_validate_tx_base_from_blob(blob.second, bwt.transactions.back()) :
+          parse_and_validate_tx_from_blob(blob.second, bwt.transactions.back());
+        if (!parsed)
         {
           res.blocks.clear();
           res.output_indices.clear();
@@ -533,6 +538,7 @@ namespace rpc
     res.info.cumulative_difficulty = (res.info.wide_cumulative_difficulty & 0xffffffffffffffff).convert_to<uint64_t>();
     res.info.block_size_limit = res.info.block_weight_limit = m_core.get_blockchain_storage().get_current_cumulative_block_weight_limit();
     res.info.block_size_median = res.info.block_weight_median = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
+    res.info.adjusted_time = m_core.get_blockchain_storage().get_adjusted_time(res.info.height);
     res.info.start_time = (uint64_t)m_core.get_start_time();
     res.info.version = MONERO_VERSION;
 
@@ -905,13 +911,13 @@ namespace rpc
     return true;
   }
 
-  epee::byte_slice DaemonHandler::handle(const std::string& request)
+  epee::byte_slice DaemonHandler::handle(std::string&& request)
   {
     MDEBUG("Handling RPC request: " << request);
 
     try
     {
-      FullMessage req_full(request, true);
+      FullMessage req_full(std::move(request), true);
 
       const std::string request_type = req_full.getRequestType();
       const auto matched_handler = std::lower_bound(std::begin(handlers), std::end(handlers), request_type);

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -25,40 +25,16 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
-// Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#pragma once
+#include "include_base_utils.h"
+#include "cryptonote_basic/cryptonote_format_utils.h"
+#include "fuzzer.h"
 
-#include <deque>
+BEGIN_INIT_SIMPLE_FUZZER()
+END_INIT_SIMPLE_FUZZER()
 
-template <template <bool> class Archive, class T>
-bool do_serialize(Archive<false> &ar, std::deque<T> &v);
-template <template <bool> class Archive, class T>
-bool do_serialize(Archive<true> &ar, std::deque<T> &v);
-
-namespace serialization
-{
-  namespace detail
-  {
-    template <typename T>
-    void do_reserve(std::deque<T> &c, size_t N)
-    {
-      c.reserve(N);
-    }
-
-    template <typename T>
-    void do_add(std::deque<T> &c, T &&e)
-    {
-      c.emplace_back(std::move(e));
-    }
-  }
-}
-
-#include "serialization.h"
-
-template <template <bool> class Archive, class T>
-bool do_serialize(Archive<false> &ar, std::deque<T> &v) { return do_serialize_container(ar, v); }
-template <template <bool> class Archive, class T>
-bool do_serialize(Archive<true> &ar, std::deque<T> &v) { return do_serialize_container(ar, v); }
+BEGIN_SIMPLE_FUZZER()
+  std::vector<cryptonote::tx_extra_field> tx_extra_fields;
+  cryptonote::parse_tx_extra(std::vector<uint8_t>(buf, buf + len), tx_extra_fields);
+END_SIMPLE_FUZZER()
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, The Monero Project
+// Copyright (c) 2017-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -44,8 +44,8 @@ namespace hw {
 
     /* Minimal supported version */
     #define MINIMAL_APP_VERSION_MAJOR    1
-    #define MINIMAL_APP_VERSION_MINOR    3
-    #define MINIMAL_APP_VERSION_MICRO    1
+    #define MINIMAL_APP_VERSION_MINOR    6
+    #define MINIMAL_APP_VERSION_MICRO    0
 
     #define VERSION(M,m,u)       ((M)<<16|(m)<<8|(u))
     #define VERSION_MAJOR(v)     (((v)>>16)&0xFF)
@@ -296,6 +296,11 @@ namespace hw {
         bool  mlsag_prepare(rct::key &a, rct::key &aG) override;
         bool  mlsag_hash(const rct::keyV &long_message, rct::key &c) override;
         bool  mlsag_sign( const rct::key &c, const rct::keyV &xx, const rct::keyV &alpha, const size_t rows, const size_t dsRows, rct::keyV &ss) override;
+
+        bool clsag_prepare(const rct::key &p, const rct::key &z, rct::key &I, rct::key &D, const rct::key &H, rct::key &a, rct::key &aG, rct::key &aH) override;
+        bool clsag_hash(const rct::keyV &data, rct::key &hash) override;
+        bool clsag_sign(const rct::key &c, const rct::key &a, const rct::key &p, const rct::key &z, const rct::key &mu_P, const rct::key &mu_C, rct::key &s) override;
+
 
         bool  close_tx(void) override;
 

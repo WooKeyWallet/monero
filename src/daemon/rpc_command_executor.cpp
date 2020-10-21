@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -511,7 +511,7 @@ bool t_rpc_command_executor::show_status() {
   }
 
   std::stringstream str;
-  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, net hash %s, v%u%s, %s, %u(out)+%u(in) connections")
+  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, net hash %s, v%u%s, %u(out)+%u(in) connections")
     % (unsigned long long)ires.height
     % (unsigned long long)net_height
     % get_sync_percentage(ires)
@@ -521,7 +521,6 @@ bool t_rpc_command_executor::show_status() {
     % get_mining_speed(cryptonote::difficulty_type(ires.wide_difficulty) / ires.target)
     % (unsigned)hfres.version
     % get_fork_extra_info(hfres.earliest_height, net_height, ires.target)
-    % (hfres.state == cryptonote::HardFork::Ready ? "up to date" : hfres.state == cryptonote::HardFork::UpdateNeeded ? "update needed" : "out of date, likely forked")
     % (unsigned)ires.outgoing_connections_count
     % (unsigned)ires.incoming_connections_count
   ;
@@ -722,10 +721,11 @@ bool t_rpc_command_executor::print_net_stats()
   uint64_t average = seconds > 0 ? net_stats_res.total_bytes_in / seconds : 0;
   uint64_t limit = limit_res.limit_down * 1024;   // convert to bytes, as limits are always kB/s
   double percent = (double)average / (double)limit * 100.0;
-  tools::success_msg_writer() << boost::format("Received %u bytes (%s) in %u packets, average %s/s = %.2f%% of the limit of %s/s")
+  tools::success_msg_writer() << boost::format("Received %u bytes (%s) in %u packets in %s, average %s/s = %.2f%% of the limit of %s/s")
     % net_stats_res.total_bytes_in
     % tools::get_human_readable_bytes(net_stats_res.total_bytes_in)
     % net_stats_res.total_packets_in
+    % tools::get_human_readable_timespan(seconds)
     % tools::get_human_readable_bytes(average)
     % percent
     % tools::get_human_readable_bytes(limit);
@@ -733,10 +733,11 @@ bool t_rpc_command_executor::print_net_stats()
   average = seconds > 0 ? net_stats_res.total_bytes_out / seconds : 0;
   limit = limit_res.limit_up * 1024;
   percent = (double)average / (double)limit * 100.0;
-  tools::success_msg_writer() << boost::format("Sent %u bytes (%s) in %u packets, average %s/s = %.2f%% of the limit of %s/s")
+  tools::success_msg_writer() << boost::format("Sent %u bytes (%s) in %u packets in %s, average %s/s = %.2f%% of the limit of %s/s")
     % net_stats_res.total_bytes_out
     % tools::get_human_readable_bytes(net_stats_res.total_bytes_out)
     % net_stats_res.total_packets_out
+    % tools::get_human_readable_timespan(seconds)
     % tools::get_human_readable_bytes(average)
     % percent
     % tools::get_human_readable_bytes(limit);
@@ -1002,7 +1003,9 @@ bool t_rpc_command_executor::print_transaction(crypto::hash transaction_hash,
     if (1 == res.txs.size())
     {
       // only available for new style answers
-      bool pruned = res.txs.front().prunable_as_hex.empty() && res.txs.front().prunable_hash != epee::string_tools::pod_to_hex(crypto::null_hash);
+      static const std::string empty_hash = epee::string_tools::pod_to_hex(crypto::cn_fast_hash("", 0));
+      // prunable_hash will equal empty_hash when nothing is prunable (mostly when the transaction is coinbase)
+      bool pruned = res.txs.front().prunable_as_hex.empty() && res.txs.front().prunable_hash != epee::string_tools::pod_to_hex(crypto::null_hash) && res.txs.front().prunable_hash != empty_hash;
       if (res.txs.front().in_pool)
         tools::success_msg_writer() << "Found in pool";
       else

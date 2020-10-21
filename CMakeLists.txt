@@ -1,4 +1,4 @@
-# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2014-2020, The Monero Project
 #
 # All rights reserved.
 #
@@ -31,7 +31,7 @@
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 list(INSERT CMAKE_MODULE_PATH 0
-  "${CMAKE_SOURCE_DIR}/cmake")
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 include(CheckLinkerFlag)
@@ -48,7 +48,12 @@ message(STATUS "CMake version ${CMAKE_VERSION}")
 
 project(monero)
 
-include(FindCcache) # Has to be included after the project() macro, to be able to read the CXX variable.
+option (USE_CCACHE "Use ccache if a usable instance is found" ON)
+if (USE_CCACHE)
+	include(FindCcache) # Has to be included after the project() macro, to be able to read the CXX variable.
+else()
+	message(STATUS "ccache deselected")
+endif()
 
 enable_language(C ASM)
 
@@ -205,6 +210,7 @@ if(NOT MANUAL_SUBMODULES)
     check_submodule(external/rapidjson)
     check_submodule(external/trezor-common)
     check_submodule(external/randomx)
+    check_submodule(external/supercop)
   endif()
 endif()
 
@@ -262,6 +268,12 @@ else()
 endif()
 option(BUILD_DEBUG_UTILITIES "Build debug utilities." DEFAULT_BUILD_DEBUG_UTILITIES)
 
+if(OSSFUZZ)
+  message(STATUS "Using OSS-Fuzz fuzzing system")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DOSSFUZZ")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DOSSFUZZ")
+endif()
+
 # Check whether we're on a 32-bit or 64-bit system
 if(CMAKE_SIZEOF_VOID_P EQUAL "8")
   set(DEFAULT_BUILD_64 ON)
@@ -300,7 +312,7 @@ endif()
 # elseif(CMAKE_SYSTEM_NAME MATCHES ".*BSDI.*")
 #   set(BSDI TRUE)
 
-include_directories(external/rapidjson/include external/easylogging++ src contrib/epee/include external)
+include_directories(external/rapidjson/include external/easylogging++ src contrib/epee/include external external/supercop/include)
 
 if(APPLE)
   include_directories(SYSTEM /usr/include/malloc)
@@ -420,7 +432,7 @@ endif ()
 
 if (APPLE AND NOT IOS)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=x86-64 -fvisibility=default -std=c++11")
-  if (NOT OpenSSL_DIR)
+  if (NOT OPENSSL_ROOT_DIR)
       EXECUTE_PROCESS(COMMAND brew --prefix openssl
         OUTPUT_VARIABLE OPENSSL_ROOT_DIR
         OUTPUT_STRIP_TRAILING_WHITESPACE)
@@ -437,13 +449,16 @@ if(STATIC AND NOT IOS)
   endif()
 endif()
 
-# find_package(HIDAPI)
+find_package(HIDAPI)
 
 add_definition_if_library_exists(c memset_s "string.h" HAVE_MEMSET_S)
 add_definition_if_library_exists(c explicit_bzero "strings.h" HAVE_EXPLICIT_BZERO)
 add_definition_if_function_found(strptime HAVE_STRPTIME)
 
 add_definitions(-DAUTO_INITIALIZE_EASYLOGGINGPP)
+
+set(MONERO_GENERATED_HEADERS_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
+include_directories(${MONERO_GENERATED_HEADERS_DIR})
 
 # Generate header for embedded translations
 # Generate header for embedded translations, use target toolchain if depends, otherwise use the
@@ -646,7 +661,8 @@ else()
   endif()
 
   # linker
-  if (NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+  if (NOT SANITIZE AND NOT OSSFUZZ AND NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
+    # PIE executables randomly crash at startup with ASAN
     # Windows binaries die on startup with PIE when compiled with GCC <9.x
     add_linker_flag_if_supported(-pie LD_SECURITY_FLAGS)
   endif()
@@ -768,7 +784,8 @@ else()
 
   endif(ARM)
 
-  if(ANDROID AND NOT BUILD_GUI_DEPS STREQUAL "ON" OR IOS)
+  # random crash on startup when asan is on if pie is enabled
+  if(NOT SANITIZE AND ANDROID AND NOT BUILD_GUI_DEPS STREQUAL "ON" OR IOS)
     #From Android 5: "only position independent executables (PIE) are supported" 
     message(STATUS "Enabling PIE executable")
     set(PIC_FLAG "")
@@ -952,6 +969,7 @@ find_path(ZMQ_INCLUDE_PATH zmq.h)
 find_library(ZMQ_LIB zmq)
 find_library(PGM_LIBRARY pgm)
 find_library(NORM_LIBRARY norm)
+find_library(GSSAPI_LIBRARY gssapi_krb5)
 find_library(PROTOLIB_LIBRARY protolib)
 find_library(SODIUM_LIBRARY sodium)
 include_directories(${SODIUM_INCLUDE_DIR} ${IOKIT_INCLUDE_DIR} ${ZMQ_INCLUDE_PATH})
@@ -968,6 +986,9 @@ endif()
 if(NORM_LIBRARY)
   set(ZMQ_LIB "${ZMQ_LIB};${NORM_LIBRARY}")
 endif()
+if(GSSAPI_LIBRARY)
+  set(ZMQ_LIB "${ZMQ_LIB};${GSSAPI_LIBRARY}")
+endif()
 if(PROTOLIB_LIBRARY)
   set(ZMQ_LIB "${ZMQ_LIB};${PROTOLIB_LIBRARY}")
 endif()
@@ -975,6 +996,7 @@ if(SODIUM_LIBRARY)
   set(ZMQ_LIB "${ZMQ_LIB};${SODIUM_LIBRARY}")
 endif()
 
+include(external/supercop/functions.cmake) # place after setting flags and before src directory inclusion
 add_subdirectory(contrib)
 add_subdirectory(src)
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019, The Monero Project
+// Copyright (c) 2014-2020, The Monero Project
 //
 // All rights reserved.
 //
@@ -910,6 +910,11 @@ std::string WalletImpl::path() const
     return m_wallet->path();
 }
 
+void WalletImpl::stop()
+{
+    m_wallet->stop();
+}
+
 bool WalletImpl::store(const std::string &path)
 {
     clearStatus();
@@ -938,13 +943,13 @@ string WalletImpl::keysFilename() const
     return m_wallet->get_keys_file();
 }
 
-bool WalletImpl::init(const std::string &daemon_address, uint64_t upper_transaction_size_limit, const std::string &daemon_username, const std::string &daemon_password, bool use_ssl, bool lightWallet)
+bool WalletImpl::init(const std::string &daemon_address, uint64_t upper_transaction_size_limit, const std::string &daemon_username, const std::string &daemon_password, bool use_ssl, bool lightWallet, const std::string &proxy_address)
 {
     clearStatus();
     m_wallet->set_light_wallet(lightWallet);
     if(daemon_username != "")
         m_daemon_login.emplace(daemon_username, daemon_password);
-    return doInit(daemon_address, upper_transaction_size_limit, use_ssl);
+    return doInit(daemon_address, proxy_address, upper_transaction_size_limit, use_ssl);
 }
 
 bool WalletImpl::lightWalletLogin(bool &isNewWallet) const
@@ -1692,6 +1697,7 @@ uint64_t WalletImpl::estimateTransactionFee(const std::vector<std::pair<std::str
         destinations.size() + 1,
         extra_size,
         m_wallet->use_fork_rules(8, 0),
+        m_wallet->use_fork_rules(HF_VERSION_CLSAG, 0),
         m_wallet->get_base_fee(),
         m_wallet->get_fee_multiplier(m_wallet->adjust_priority(static_cast<uint32_t>(priority))),
         m_wallet->get_fee_quantization_mask());
@@ -1997,7 +2003,7 @@ bool WalletImpl::checkReserveProof(const std::string &address, const std::string
 
 std::string WalletImpl::signMessage(const std::string &message)
 {
-  return m_wallet->sign(message);
+  return m_wallet->sign(message, tools::wallet2::sign_with_spend_key);
 }
 
 bool WalletImpl::verifySignedMessage(const std::string &message, const std::string &address, const std::string &signature) const
@@ -2007,7 +2013,7 @@ bool WalletImpl::verifySignedMessage(const std::string &message, const std::stri
   if (!cryptonote::get_account_address_from_str(info, m_wallet->nettype(), address))
     return false;
 
-  return m_wallet->verify(message, info.address, signature);
+  return m_wallet->verify(message, info.address, signature).valid;
 }
 
 std::string WalletImpl::signMultisigParticipant(const std::string &message) const
@@ -2086,6 +2092,11 @@ void WalletImpl::setTrustedDaemon(bool arg)
 bool WalletImpl::trustedDaemon() const
 {
     return m_wallet->is_trusted_daemon();
+}
+
+bool WalletImpl::setProxy(const std::string &address)
+{
+    return m_wallet->set_proxy(address);
 }
 
 bool WalletImpl::watchOnly() const
@@ -2241,9 +2252,9 @@ void WalletImpl::pendingTxPostProcess(PendingTransactionImpl * pending)
   pending->m_pending_tx = exported_txs.ptx;
 }
 
-bool WalletImpl::doInit(const string &daemon_address, uint64_t upper_transaction_size_limit, bool ssl)
+bool WalletImpl::doInit(const string &daemon_address, const std::string &proxy_address, uint64_t upper_transaction_size_limit, bool ssl)
 {
-    if (!m_wallet->init(daemon_address, m_daemon_login, boost::asio::ip::tcp::endpoint{}, upper_transaction_size_limit))
+    if (!m_wallet->init(daemon_address, m_daemon_login, proxy_address, upper_transaction_size_limit))
        return false;
 
     // in case new wallet, this will force fast-refresh (pulling hashes instead of blocks)
