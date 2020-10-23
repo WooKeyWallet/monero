@@ -132,3 +132,30 @@ RUN cd /src \
        ANDROID_STANDALONE_TOOLCHAIN_PATH=${TOOLCHAIN_DIR} \
        USE_SINGLE_BUILDDIR=1 \
        PATH=${HOST_PATH} make release-static-android-armv8 -j${NPROC}
+
+#make wallet_api
+RUN cd /src/build/release \
+    && make wallet_api
+
+#copy lib
+RUN cd /src/build/release \
+    && mkdir -p /armv8/monero \
+    && find -name "*.a" -exec cp {} /armv8/monero \;
+RUN cd /opt/android/boost_1_68_0 \
+    && mkdir -p /armv8/boost \
+    && find -name "*.a" -exec cp {} /armv8/boost \;
+RUN cd /opt/android/libiconv-1.15 \
+    && mkdir -p /armv8/iconv \
+    && find -name "*.a" -exec cp {} /armv8/iconv \;
+RUN cd /opt/android/libsodium \
+    && mkdir -p /armv8/sodium \
+    && find -name "*.a" -exec cp {} /armv8/sodium \;
+RUN cd /opt/android/libzmq \
+    && mkdir -p /armv8/zmq \
+    && find -name "*.a" -exec cp {} /armv8/zmq \;
+RUN cd /opt/android/openssl-1.0.2p \
+    && mkdir -p /armv8/openssl \
+    && find -name "*.a" -exec cp {} /armv8/openssl \;
+RUN cd /opt/android/zlib \
+    && mkdir -p /armv8/zlib \
+    && find -name "*.a" -exec cp {} /armv8/zlib \;
